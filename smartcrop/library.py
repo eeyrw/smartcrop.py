@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 
 import math
 import sys
@@ -46,13 +47,15 @@ class SmartCrop(object):  # pylint:disable=too-many-instance-attributes
         saturation_brightness_min: float = 0.05,
         saturation_threshold: float = 0.4,
         saturation_weight: float = 0.3,
+        boost_weight: float = 100,
         score_down_sample: int = 8,
         skin_bias: float = 0.01,
         skin_brightness_max: float = 1,
         skin_brightness_min: float = 0.2,
         skin_color: tuple[float, float, float] | None = None,
         skin_threshold: float = 0.8,
-        skin_weight: float = 1.8
+        skin_weight: float = 1.8,
+        debug=False
     ):
         self.detail_weight = detail_weight
         self.edge_radius = edge_radius
@@ -64,6 +67,7 @@ class SmartCrop(object):  # pylint:disable=too-many-instance-attributes
         self.saturation_brightness_min = saturation_brightness_min
         self.saturation_threshold = saturation_threshold
         self.saturation_weight = saturation_weight
+        self.boost_weight = boost_weight
         self.score_down_sample = score_down_sample
         self.skin_bias = skin_bias
         self.skin_brightness_max = skin_brightness_max
@@ -71,6 +75,8 @@ class SmartCrop(object):  # pylint:disable=too-many-instance-attributes
         self.skin_color = skin_color or self.DEFAULT_SKIN_COLOR
         self.skin_threshold = skin_threshold
         self.skin_weight = skin_weight
+        self.boosts = None
+        self.debug = debug
 
     def analyse(  # pylint:disable=too-many-arguments,too-many-locals
         self,
@@ -90,15 +96,17 @@ class SmartCrop(object):  # pylint:disable=too-many-instance-attributes
         cie_image = image.convert('L', (0.2126, 0.7152, 0.0722, 0))
         cie_array = np.array(cie_image)  # [0; 255]
 
-        # R=skin G=edge B=saturation
+        # R=skin G=edge B=saturation A=boost
         edge_image = self.detect_edge(cie_image)
         skin_image = self.detect_skin(cie_array, image)
         saturation_image = self.detect_saturation(cie_array, image)
-        analyse_image = Image.merge('RGB', [skin_image, edge_image, saturation_image])
+        boost_image = self.applyBoosts(image)
+        analyse_image = Image.merge('RGBA', [skin_image, edge_image, saturation_image, boost_image])
 
         del edge_image
         del skin_image
         del saturation_image
+        del boost_image
 
         score_image = analyse_image.copy()
         score_image.thumbnail(
@@ -120,12 +128,13 @@ class SmartCrop(object):  # pylint:disable=too-many-instance-attributes
             scale_step=scale_step,
             step=step)
 
-        for crop in crops:
+        for i, crop in enumerate(crops):
             crop['score'] = self.score(score_image, crop)
             if crop['score']['total'] > top_score:
                 top_crop = crop
                 top_score = crop['score']['total']
-
+                if self.debug:
+                    self.debug_crop(analyse_image, crop).save('smartcrop_dbg_crop_%d.png' % i)
         return {'analyse_image': analyse_image, 'crops': crops, 'top_crop': top_crop}
 
     def crop(  # pylint:disable=too-many-arguments,too-many-locals
@@ -137,8 +146,10 @@ class SmartCrop(object):  # pylint:disable=too-many-instance-attributes
         max_scale: float = 1,
         min_scale: float = 0.9,
         scale_step: float = 0.1,
-        step: int = 8
+        step: int = 8,
+        boosts=None
     ) -> dict:
+        self.boosts = boosts
         """Not yet fully cleaned from https://github.com/hhatto/smartcrop.py."""
         scale = min(image.size[0] / width, image.size[1] / height)
         crop_width = int(math.floor(width * scale))
@@ -158,6 +169,15 @@ class SmartCrop(object):  # pylint:disable=too-many-instance-attributes
                     Image.Resampling.LANCZOS)
                 crop_width = int(math.floor(crop_width * prescale_size))
                 crop_height = int(math.floor(crop_height * prescale_size))
+                if self.boosts is not None:
+                    self.boosts = [
+                        {'x': boost['x'] * prescale_size,
+                         'y': boost['y'] * prescale_size,
+                         'width': boost['width'] * prescale_size,
+                         'height': boost['height'] * prescale_size,
+                         'weight': boost['weight']
+                         } for boost in self.boosts
+                    ]
             else:
                 prescale_size = 1
 
@@ -216,6 +236,16 @@ class SmartCrop(object):  # pylint:disable=too-many-instance-attributes
     def debug_crop(self, analyse_image, crop: dict):
         debug_image = analyse_image.copy()
         debug_pixels = debug_image.getdata()
+        boost_pixels = debug_pixels.copy()
+        debug_boost_image = Image.new(
+            'RGBA',
+            (
+                debug_image.size[0],
+                debug_image.size[1]
+            ),
+            (0, 0, 0, 0)
+        )
+        debug_boost_pixels = debug_boost_image.getdata()
         debug_crop_image = Image.new(
             'RGBA',
             (
@@ -241,7 +271,7 @@ class SmartCrop(object):  # pylint:disable=too-many-instance-attributes
                         (
                             debug_pixels[index][0],
                             int(debug_pixels[index][1] + importance * 32),
-                            debug_pixels[index][2]
+                            debug_pixels[index][2],
                         ))
                 elif importance < 0:
                     debug_pixels.putpixel(
@@ -249,9 +279,20 @@ class SmartCrop(object):  # pylint:disable=too-many-instance-attributes
                         (
                             int(debug_pixels[index][0] + importance * -64),
                             debug_pixels[index][1],
-                            debug_pixels[index][2]
+                            debug_pixels[index][2],
                         ))
+                boost_value = boost_pixels[index][3]//2
+                debug_boost_pixels.putpixel(
+                    (x, y),
+                    (
+                        boost_value,
+                        boost_value,
+                        boost_value,
+                        boost_value,
+                    ))
+
         debug_image.paste(debug_crop_image, (crop['x'], crop['y']), debug_crop_image.split()[3])
+        debug_image.alpha_composite(debug_boost_image)
         return debug_image
 
     def detect_edge(self, cie_image):
@@ -295,6 +336,22 @@ class SmartCrop(object):  # pylint:disable=too-many-instance-attributes
 
         return Image.fromarray(skin_data.astype('uint8'))
 
+    def applyBoosts(self, image):
+        w, h = image.size
+        od = np.zeros((h, w))
+        if self.boosts is not None:
+            for boost in self.boosts:
+                self.applyBoost(boost, od)
+        return Image.fromarray(od.astype('uint8'))
+
+    def applyBoost(self, boost, image):
+        x0 = int(boost['x'])
+        x1 = int(boost['x'] + boost['width'])
+        y0 = int(boost['y'])
+        y1 = int(boost['y'] + boost['height'])
+        weight = boost['weight'] * 255
+        image[y0:y1, x0:x1] += weight
+
     def importance(self, crop: dict, x: int, y: int) -> float:
         if (
             crop['x'] > x or x >= crop['x'] + crop['width'] or
@@ -323,6 +380,7 @@ class SmartCrop(object):  # pylint:disable=too-many-instance-attributes
             'detail': 0,
             'saturation': 0,
             'skin': 0,
+            'boost': 0,
             'total': 0,
         }
         target_data = target_image.getdata()
@@ -348,10 +406,63 @@ class SmartCrop(object):  # pylint:disable=too-many-instance-attributes
                 score['saturation'] += (
                     target_data[index][2] / 255 * (detail + self.saturation_bias) * importance
                 )
+                score['boost'] += (
+                    target_data[index][3] / 255 * importance
+                )
         score['total'] = (
             score['detail'] * self.detail_weight +
             score['skin'] * self.skin_weight +
-            score['saturation'] * self.saturation_weight
+            score['saturation'] * self.saturation_weight +
+            score['boost'] * self.boost_weight
         ) / (crop['width'] * crop['height'])
 
         return score
+
+
+class SmartCropWithFace(SmartCrop):
+    def __init__(self, detail_weight: float = 0.2, edge_radius: float = 0.4, edge_weight: float = -20,
+                 outside_importance: float = -0.5, rule_of_thirds: bool = True, saturation_bias: float = 0.2,
+                 saturation_brightness_max: float = 0.9, saturation_brightness_min: float = 0.05, saturation_threshold: float = 0.4, saturation_weight: float = 0.3,
+                 boost_weight: float = 100, score_down_sample: int = 8, skin_bias: float = 0.01, skin_brightness_max: float = 1, skin_brightness_min: float = 0.2, skin_color: tuple[float, float, float] | None = None, skin_threshold: float = 0.8, skin_weight: float = 1.8, debug=False):
+        super().__init__(detail_weight, edge_radius, edge_weight, outside_importance, rule_of_thirds, saturation_bias, saturation_brightness_max, saturation_brightness_min,
+                         saturation_threshold, saturation_weight, boost_weight, score_down_sample, skin_bias, skin_brightness_max, skin_brightness_min, skin_color, skin_threshold, skin_weight, debug)
+        from facedet import FaceDetector
+        self.faceDtr = FaceDetector()
+
+    def crop(self, image, width: int, height: int, prescale: bool = True, max_scale: float = 1, min_scale: float = 0.9, scale_step: float = 0.1, step: int = 8) -> dict:
+        boosts = []
+        for faceCoord in self.faceDtr.detect(image):
+            x, y, w, h = faceCoord[0:4]
+            boosts.append({
+                'x': x,
+                'y': y,
+                'width': w,
+                'height': h,
+                'weight': 1
+            })
+        return super().crop(image, width, height, prescale, max_scale, min_scale, scale_step, step, boosts)
+
+
+if __name__ == '__main__':
+
+    here = os.path.abspath(os.path.dirname(__file__))
+    imgPath = os.path.join(here, '../tests/images', 'business-work-1.jpg')
+    img = Image.open(imgPath)
+
+    cropper = SmartCropWithFace(debug=True)
+
+    ret = cropper.crop(img.copy(), 80, 80)
+
+    box = (ret['top_crop']['x'],
+           ret['top_crop']['y'],
+           ret['top_crop']['width'] + ret['top_crop']['x'],
+           ret['top_crop']['height'] + ret['top_crop']['y'])
+
+    print(box)
+
+    # if box != crop:
+    img = img.crop(box)
+    # img.thumbnail((500, 500), Image.Resampling.LANCZOS)
+    img.save('thumb.jpg')
+
+    # assert box == crop
