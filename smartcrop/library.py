@@ -426,7 +426,7 @@ class SmartCropWithFace(SmartCrop):
                  boost_weight: float = 100, score_down_sample: int = 8, skin_bias: float = 0.01, skin_brightness_max: float = 1, skin_brightness_min: float = 0.2, skin_color: tuple[float, float, float] | None = None, skin_threshold: float = 0.8, skin_weight: float = 1.8, debug=False):
         super().__init__(detail_weight, edge_radius, edge_weight, outside_importance, rule_of_thirds, saturation_bias, saturation_brightness_max, saturation_brightness_min,
                          saturation_threshold, saturation_weight, boost_weight, score_down_sample, skin_bias, skin_brightness_max, skin_brightness_min, skin_color, skin_threshold, skin_weight, debug)
-        from facedet import FaceDetector
+        from .facedet import FaceDetector
         self.faceDtr = FaceDetector()
 
     def crop(self, image, width: int, height: int, prescale: bool = True, max_scale: float = 1, min_scale: float = 0.9, scale_step: float = 0.1, step: int = 8) -> dict:
