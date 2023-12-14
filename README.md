@@ -40,7 +40,7 @@ Use the basic command-line tool:
 
 ``` sh
 $ smartcroppy --help
-usage: smartcroppy [-h] [--debug-file DEBUG_FILE] [--width WIDTH] [--height HEIGHT] INPUT_FILE OUTPUT_FILE
+usage: smartcroppy [-h] [--debug-file DEBUG_FILE] [--width WIDTH] [--height HEIGHT] [--facedet] INPUT_FILE OUTPUT_FILE
 
 positional arguments:
   INPUT_FILE            Input image file
@@ -52,6 +52,7 @@ options:
                         Debugging image file
   --width WIDTH         Crop width
   --height HEIGHT       Crop height
+  --facedet             Use face detection to aid crop
 ```
 
 Processing an image:
@@ -59,6 +60,11 @@ Processing an image:
 ``` sh
 smartcroppy --width 300 --height 300 tests/images/business-work-1.jpg output.jpg --debug-file debug.jpg
 ```
+
+``` sh
+smartcroppy --width 300 --height 300 --facedet tests/images/face-1.jpg output.jpg --debug-file debug.jpg
+```
+
 
 Or use the module it in your code (this is a really basic example, see [examples/](examples/) and [smartcrop/cli.py](smartcrop/cli.py) for inspiration):
 
@@ -74,7 +80,19 @@ cropper = smartcrop.SmartCrop()
 result = cropper.crop(image, 100, 100)
 print(json.dumps(result, indent=2))
 ```
+Use face detection:
+``` python
+import json
+import sys
 
+import smartcrop
+from PIL import Image
+
+image = Image.open(sys.argv[1])
+cropper = smartcrop.SmartCropWithFace()
+result = cropper.crop(image, 100, 100)
+print(json.dumps(result, indent=2))
+```
 ## Testing
 
 Install dependencies for testing, then call `pytest`:

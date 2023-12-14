@@ -31,7 +31,7 @@ dependencies = [
     'numpy',
     'pillow>=4.0.0',
     'piexif',
-    'opencv-python'
+    'opencv-python>=4.8.0'
 ]
 
 [project.optional-dependencies]
