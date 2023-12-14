@@ -16,22 +16,12 @@ Jonas Wagner\'s [smartcrop.js](https://github.com/jwagner/smartcrop.js).
 
 Python requirements are defined in [pyproject.toml](pyproject.toml).
 
-Moreover the packages such as `PyGObject` and `GExiv2` requires additional system packages that has to be installed using your OS package manager. Please check [requirements.install.apt](requirements.install.apt) for that purpose (tuned on Ubuntu 22.04).
-
 ## Installation
 
-``` sh
-sudo apt-get install <...> # list from requirements.install.apt
-pip3 install -U pip setuptools wheel # optional but recommended
-pip3 install smartcrop
-```
-
-or directly from GitHub:
+Directly from GitHub:
 
 ``` sh
-sudo apt-get install <...> # list from requirements.install.apt
-pip3 install -U pip setuptools wheel # optional but recommended
-pip install -e git+git://github.com/hhatto/smartcrop.py.git@master#egg=smartcrop
+pip install -e git+git://github.com/eeyrw/smartcrop.py.git@master#egg=smartcrop
 ```
 
 ## Usage
