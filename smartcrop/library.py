@@ -293,7 +293,7 @@ class SmartCrop(object):  # pylint:disable=too-many-instance-attributes
 
         debug_image.paste(debug_crop_image, (crop['x'], crop['y']), debug_crop_image.split()[3])
         debug_image.alpha_composite(debug_boost_image)
-        return debug_image
+        return debug_image.convert('RGB')
 
     def detect_edge(self, cie_image):
         return cie_image.filter(Kernel((3, 3), (0, -1, 0, -1, 4, -1, 0, -1, 0), 1, 1))
