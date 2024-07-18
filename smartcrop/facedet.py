@@ -4,7 +4,7 @@ import cv2 as cv
 
 
 # Check OpenCV version
-assert cv.__version__ >= "4.8.0", \
+assert tuple(map(int, cv.__version__.split('.'))) >= (4, 8, 0), \
     "Please install latest opencv-python to try this demo: python3 -m pip install --upgrade opencv-python"
 
 
